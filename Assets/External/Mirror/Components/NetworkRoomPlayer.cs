@@ -37,7 +37,7 @@ namespace Mirror
         /// Diagnostic index of the player, e.g. Player1, Player2, etc.
         /// </summary>
         [Tooltip("Diagnostic index of the player, e.g. Player1, Player2, etc.")]
-        [SyncVar]
+        [SyncVar(hook = nameof(IndexChanged))]
         public int index;
 
         #region Unity Callbacks
@@ -58,10 +58,20 @@ namespace Mirror
                 room.roomSlots.Add(this);
                 room.RecalculateRoomPlayerIndices();
 
-                OnClientEnterRoom();
+                if (NetworkClient.active)
+                    room.CallOnClientEnterRoom();
             }
             else
                 logger.LogError("RoomPlayer could not find a NetworkRoomManager. The RoomPlayer requires a NetworkRoomManager object to function. Make sure that there is one in the scene.");
+        }
+
+        public virtual void OnDisable()
+        {
+            if (NetworkClient.active && NetworkManager.singleton is NetworkRoomManager room)
+            {
+                room.roomSlots.Remove(this);
+                room.RecalculateRoomPlayerIndices();
+            }
         }
 
         #endregion
@@ -84,6 +94,13 @@ namespace Mirror
         #region SyncVar Hooks
 
         /// <summary>
+        /// This is a hook that is invoked on clients when the index changes.
+        /// </summary>
+        /// <param name="oldIndex">The old index value</param>
+        /// <param name="newIndex">The new index value</param>
+        public virtual void IndexChanged(int oldIndex, int newIndex) { }
+
+        /// <summary>
         /// This is a hook that is invoked on clients when a RoomPlayer switches between ready or not ready.
         /// <para>This function is called when the a client player calls CmdChangeReadyState.</para>
         /// </summary>
@@ -100,13 +117,13 @@ namespace Mirror
         #region Room Client Virtuals
 
         /// <summary>
-        /// This is a hook that is invoked on all player objects when entering the room.
+        /// This is a hook that is invoked on clients for all room player objects when entering the room.
         /// <para>Note: isLocalPlayer is not guaranteed to be set until OnStartLocalPlayer is called.</para>
         /// </summary>
         public virtual void OnClientEnterRoom() { }
 
         /// <summary>
-        /// This is a hook that is invoked on all player objects when exiting the room.
+        /// This is a hook that is invoked on clients for all room player objects when exiting the room.
         /// </summary>
         public virtual void OnClientExitRoom() { }
 

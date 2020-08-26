@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using Mirror.RemoteCalls;
 using UnityEngine;
 
 namespace Mirror
@@ -25,9 +26,6 @@ namespace Mirror
         /// <summary>
         /// The connection to the host mode client (if any).
         /// </summary>
-        // original HLAPI has .localConnections list with only m_LocalConnection in it
-        // (for backwards compatibility because they removed the real localConnections list a while ago)
-        // => removed it for easier code. use .localConnection now!
         public static NetworkConnectionToClient localConnection { get; private set; }
 
         /// <summary>
@@ -57,7 +55,7 @@ namespace Mirror
         /// <para>Checks if the server has been started.</para>
         /// <para>This will be true after NetworkServer.Listen() has been called.</para>
         /// </summary>
-        public static bool active { get; private set; }
+        public static bool active { get; internal set; }
 
         /// <summary>
         /// Should the server disconnect remote connections that have gone silent for more than Server Idle Timeout?
@@ -74,12 +72,14 @@ namespace Mirror
         /// </summary>
         public static float disconnectInactiveTimeout = 60f;
 
-        // cache the Send(connectionIds) list to avoid allocating each time
+        /// <summary>
+        /// cache the Send(connectionIds) list to avoid allocating each time 
+        /// </summary>
         static readonly List<int> connectionIdsCache = new List<int>();
 
-        // Deprecated 02/23/2020
         /// <summary>
         /// Reset the NetworkServer singleton.
+        /// <para>Deprecated 02/23/2020</para>
         /// </summary>
         [Obsolete("NetworkServer.Reset was used to reset the singleton, but all it does is set active to false ever since we made NetworkServer static. Use StopServer to stop the server, or Shutdown to fully reset the server.")]
         public static void Reset()
@@ -151,6 +151,8 @@ namespace Mirror
 
             //Make sure connections are cleared in case any old connections references exist from previous sessions
             connections.Clear();
+
+            logger.Assert(Transport.activeTransport != null, "There was no active transport when calling NetworkServer.Listen, If you are calling Listen manually then make sure to set 'Transport.activeTransport' first");
             Transport.activeTransport.OnServerDisconnected.AddListener(OnDisconnected);
             Transport.activeTransport.OnServerConnected.AddListener(OnConnected);
             Transport.activeTransport.OnServerDataReceived.AddListener(OnDataReceived);
@@ -214,7 +216,10 @@ namespace Mirror
             return connections.Remove(connectionId);
         }
 
-        // called by LocalClient to add itself. dont call directly.
+        /// <summary>
+        /// called by LocalClient to add itself. dont call directly. 
+        /// </summary>
+        /// <param name="conn"></param>
         internal static void SetLocalConnection(ULocalConnectionToClient conn)
         {
             if (localConnection != null)
@@ -237,7 +242,7 @@ namespace Mirror
             RemoveConnection(0);
         }
 
-        internal static void ActivateHostScene()
+        public static void ActivateHostScene()
         {
             foreach (NetworkIdentity identity in NetworkIdentity.spawned.Values)
             {
@@ -250,8 +255,15 @@ namespace Mirror
             }
         }
 
-        // this is like SendToReady - but it doesn't check the ready flag on the connection.
-        // this is used for ObjectDestroy messages.
+
+        /// <summary>
+        /// this is like SendToReady - but it doesn't check the ready flag on the connection.
+        /// this is used for ObjectDestroy messages.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="identity"></param>
+        /// <param name="msg"></param>
+        /// <param name="channelId"></param>
         static void SendToObservers<T>(NetworkIdentity identity, T msg, int channelId = Channels.DefaultReliable) where T : IMessageBase
         {
             if (logger.LogEnabled()) logger.Log("Server.SendToObservers id:" + typeof(T));
@@ -291,7 +303,7 @@ namespace Mirror
         }
 
         /// <summary>
-        /// Send a message to all connected clients, both ready and not-ready.</para>
+        /// Send a message to all connected clients, both ready and not-ready.
         /// <para>See <see cref="NetworkConnection.isReady">NetworkConnection.isReady</see></para>
         /// </summary>
         /// <typeparam name="T">Message type</typeparam>
@@ -470,10 +482,23 @@ namespace Mirror
             connections.Clear();
         }
 
-        // The user should never need to pump the update loop manually
-        internal static void Update()
+        /// <summary>
+        /// If connections is empty or if only has host
+        /// </summary>
+        /// <returns></returns>
+        public static bool NoConnections()
         {
-            if (!active)
+            return connections.Count == 0 || (connections.Count == 1 && localConnection != null);
+        }
+
+        /// <summary>
+        /// Called from NetworkManager in LateUpdate
+        /// <para>The user should never need to pump the update loop manually</para>
+        /// </summary>
+        public static void Update()
+        {
+            // dont need to update server if not active or no client connections
+            if (!active || NoConnections())
                 return;
 
             // Check for dead clients but exclude the host client because it
@@ -493,9 +518,10 @@ namespace Mirror
             // update all server objects
             foreach (KeyValuePair<uint, NetworkIdentity> kvp in NetworkIdentity.spawned)
             {
-                if (kvp.Value != null && kvp.Value.gameObject != null)
+                NetworkIdentity identity = kvp.Value;
+                if (identity != null)
                 {
-                    kvp.Value.ServerUpdate();
+                    identity.ServerUpdate();
                 }
                 else
                 {
@@ -948,16 +974,20 @@ namespace Mirror
             }
         }
 
-        // default ready handler.
+        /// <summary>
+        /// default ready handler. 
+        /// </summary>
+        /// <param name="conn"></param>
+        /// <param name="msg"></param>
         static void OnClientReadyMessage(NetworkConnection conn, ReadyMessage msg)
         {
             if (logger.LogEnabled()) logger.Log("Default handler for ready message from " + conn);
             SetClientReady(conn);
         }
 
-        // Deprecated 5/2/2020
         /// <summary>
         /// Obsolete: Removed as a security risk. Use <see cref="RemovePlayerForConnection(NetworkConnection, bool)">NetworkServer.RemovePlayerForConnection</see> instead.
+        /// <para>Deprecated 5/2/2020</para>
         /// </summary>
         [EditorBrowsable(EditorBrowsableState.Never), Obsolete("Removed as a security risk. Use NetworkServer.RemovePlayerForConnection(NetworkConnection conn, bool keepAuthority = false) instead", true)]
         static void OnRemovePlayerMessage(NetworkConnection conn, RemovePlayerMessage msg) { }
@@ -984,7 +1014,11 @@ namespace Mirror
             }
         }
 
-        // Handle command from specific player, this could be one of multiple players on a single client
+        /// <summary>
+        /// Handle command from specific player, this could be one of multiple players on a single client
+        /// </summary>
+        /// <param name="conn"></param>
+        /// <param name="msg"></param>
         static void OnCommandMessage(NetworkConnection conn, CommandMessage msg)
         {
             if (!NetworkIdentity.spawned.TryGetValue(msg.netId, out NetworkIdentity identity))
@@ -993,10 +1027,13 @@ namespace Mirror
                 return;
             }
 
+            CommandInfo commandInfo = identity.GetCommandInfo(msg.componentIndex, msg.functionHash);
+
             // Commands can be for player objects, OR other objects with client-authority
             // -> so if this connection's controller has a different netId then
             //    only allow the command if clientAuthorityOwner
-            if (identity.connectionToClient != conn)
+            bool needAuthority = !commandInfo.ignoreAuthority;
+            if (needAuthority && identity.connectionToClient != conn)
             {
                 logger.LogWarning("Command for object without authority [netId=" + msg.netId + "]");
                 return;
@@ -1005,7 +1042,7 @@ namespace Mirror
             if (logger.LogEnabled()) logger.Log("OnCommandMessage for netId=" + msg.netId + " conn=" + conn);
 
             using (PooledNetworkReader networkReader = NetworkReaderPool.GetReader(msg.payload))
-                identity.HandleCommand(msg.componentIndex, msg.functionHash, networkReader);
+                identity.HandleCommand(msg.componentIndex, msg.functionHash, networkReader, conn as NetworkConnectionToClient);
         }
 
         internal static void SpawnObject(GameObject obj, NetworkConnection ownerConnection)
@@ -1129,32 +1166,6 @@ namespace Mirror
             }
         }
 
-        static bool CheckForPrefab(GameObject obj)
-        {
-#if UNITY_EDITOR
-#if UNITY_2018_3_OR_NEWER
-            return UnityEditor.PrefabUtility.IsPartOfPrefabAsset(obj);
-#elif UNITY_2018_2_OR_NEWER
-            return (UnityEditor.PrefabUtility.GetCorrespondingObjectFromSource(obj) == null) && (UnityEditor.PrefabUtility.GetPrefabObject(obj) != null);
-#else
-            return (UnityEditor.PrefabUtility.GetPrefabParent(obj) == null) && (UnityEditor.PrefabUtility.GetPrefabObject(obj) != null);
-#endif
-#else
-            return false;
-#endif
-        }
-
-        static bool VerifyCanSpawn(GameObject obj)
-        {
-            if (CheckForPrefab(obj))
-            {
-                logger.LogFormat(LogType.Error, "GameObject {0} is a prefab, it can't be spawned. This will cause errors in builds.", obj.name);
-                return false;
-            }
-
-            return true;
-        }
-
         /// <summary>
         /// This spawns an object like NetworkServer.Spawn() but also assigns Client Authority to the specified client.
         /// <para>This is the same as calling NetworkIdentity.AssignClientAuthority on the spawned object.</para>
@@ -1198,6 +1209,32 @@ namespace Mirror
             }
         }
 
+        static bool CheckForPrefab(GameObject obj)
+        {
+#if UNITY_EDITOR
+#if UNITY_2018_3_OR_NEWER
+            return UnityEditor.PrefabUtility.IsPartOfPrefabAsset(obj);
+#elif UNITY_2018_2_OR_NEWER
+            return (UnityEditor.PrefabUtility.GetCorrespondingObjectFromSource(obj) == null) && (UnityEditor.PrefabUtility.GetPrefabObject(obj) != null);
+#else
+            return (UnityEditor.PrefabUtility.GetPrefabParent(obj) == null) && (UnityEditor.PrefabUtility.GetPrefabObject(obj) != null);
+#endif
+#else
+            return false;
+#endif
+        }
+
+        static bool VerifyCanSpawn(GameObject obj)
+        {
+            if (CheckForPrefab(obj))
+            {
+                logger.LogFormat(LogType.Error, "GameObject {0} is a prefab, it can't be spawned. This will cause errors in builds.", obj.name);
+                return false;
+            }
+
+            return true;
+        }
+
         static void DestroyObject(NetworkIdentity identity, bool destroyServerObject)
         {
             if (logger.LogEnabled()) logger.Log("DestroyObject instance:" + identity.netId);
@@ -1222,9 +1259,15 @@ namespace Mirror
             // when unspawning, dont destroy the server's object
             if (destroyServerObject)
             {
+                identity.destroyCalled = true;
                 UnityEngine.Object.Destroy(identity.gameObject);
             }
-            identity.Reset();
+            // if we are destroying the server object we don't need to reset the identity
+            // reseting it will cause isClient/isServer to be false in the OnDestroy call
+            else
+            {
+                identity.Reset();
+            }
         }
 
         /// <summary>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using Mirror.RemoteCalls;
 using UnityEngine;
 
 namespace Mirror
@@ -40,7 +41,7 @@ namespace Mirror
         [Tooltip("Time in seconds until next change is synchronized to the client. '0' means send immediately if changed. '0.5' means only send changes every 500ms.\n(This is for state synchronization like SyncVars, SyncLists, OnSerialize. Not for Cmds, Rpcs, etc.)")]
         // [0,2] should be enough. anything >2s is too laggy anyway.
         [Range(0, 2)]
-        [HideInInspector] public float syncInterval = 0;
+        [HideInInspector] public float syncInterval = 0.1f;
 
         /// <summary>
         /// Returns true if this object is active on an active server.
@@ -127,10 +128,11 @@ namespace Mirror
                 if (netIdentityCache == null)
                 {
                     netIdentityCache = GetComponent<NetworkIdentity>();
-                }
-                if (netIdentityCache == null)
-                {
-                    logger.LogError("There is no NetworkIdentity on " + name + ". Please add one.");
+                    // do this 2nd check inside first if so that we are not checking == twice on unity Object
+                    if (netIdentityCache == null)
+                    {
+                        logger.LogError("There is no NetworkIdentity on " + name + ". Please add one.");
+                    }
                 }
                 return netIdentityCache;
             }
@@ -167,31 +169,19 @@ namespace Mirror
         }
 
         #region Commands
-
-        internal static int GetMethodHash(Type invokeClass, string methodName)
-        {
-            // (invokeClass + ":" + cmdName).GetStableHashCode() would cause allocations.
-            // so hash1 + hash2 is better.
-            unchecked
-            {
-                int hash = invokeClass.FullName.GetStableHashCode();
-                return hash * 503 + methodName.GetStableHashCode();
-            }
-        }
-
         [EditorBrowsable(EditorBrowsableState.Never)]
-        protected void SendCommandInternal(Type invokeClass, string cmdName, NetworkWriter writer, int channelId)
+        protected void SendCommandInternal(Type invokeClass, string cmdName, NetworkWriter writer, int channelId, bool ignoreAuthority = false)
         {
             // this was in Weaver before
             // NOTE: we could remove this later to allow calling Cmds on Server
             //       to avoid Wrapper functions. a lot of people requested this.
             if (!NetworkClient.active)
             {
-                logger.LogError("Command Function " + cmdName + " called on server without an active client.");
+                logger.LogError($"Command Function {cmdName} called without an active client.");
                 return;
             }
             // local players can always send commands, regardless of authority, other objects must have authority.
-            if (!(isLocalPlayer || hasAuthority))
+            if (!(ignoreAuthority || isLocalPlayer || hasAuthority))
             {
                 logger.LogWarning($"Trying to send command for object without authority. {invokeClass.ToString()}.{cmdName}");
                 return;
@@ -209,7 +199,7 @@ namespace Mirror
                 netId = netId,
                 componentIndex = ComponentIndex,
                 // type+func so Inventory.RpcUse != Equipment.RpcUse
-                functionHash = GetMethodHash(invokeClass, cmdName),
+                functionHash = RemoteCallHelper.GetMethodHash(invokeClass, cmdName),
                 // segment to avoid reader allocations
                 payload = writer.ToArraySegment()
             };
@@ -226,13 +216,13 @@ namespace Mirror
         [EditorBrowsable(EditorBrowsableState.Never)]
         public virtual bool InvokeCommand(int cmdHash, NetworkReader reader)
         {
-            return InvokeHandlerDelegate(cmdHash, MirrorInvokeType.Command, reader);
+            return RemoteCallHelper.InvokeHandlerDelegate(cmdHash, MirrorInvokeType.Command, reader, this);
         }
         #endregion
 
         #region Client RPCs
         [EditorBrowsable(EditorBrowsableState.Never)]
-        protected void SendRPCInternal(Type invokeClass, string rpcName, NetworkWriter writer, int channelId)
+        protected void SendRPCInternal(Type invokeClass, string rpcName, NetworkWriter writer, int channelId, bool excludeOwner)
         {
             // this was in Weaver before
             if (!NetworkServer.active)
@@ -253,12 +243,15 @@ namespace Mirror
                 netId = netId,
                 componentIndex = ComponentIndex,
                 // type+func so Inventory.RpcUse != Equipment.RpcUse
-                functionHash = GetMethodHash(invokeClass, rpcName),
+                functionHash = RemoteCallHelper.GetMethodHash(invokeClass, rpcName),
                 // segment to avoid reader allocations
                 payload = writer.ToArraySegment()
             };
 
-            NetworkServer.SendToReady(netIdentity, message, channelId);
+            // The public facing parameter is excludeOwner in [ClientRpc]
+            // so we negate it here to logically align with SendToReady.
+            bool includeOwner = !excludeOwner;
+            NetworkServer.SendToReady(netIdentity, message, includeOwner, channelId);
         }
 
         [EditorBrowsable(EditorBrowsableState.Never)]
@@ -294,7 +287,7 @@ namespace Mirror
                 netId = netId,
                 componentIndex = ComponentIndex,
                 // type+func so Inventory.RpcUse != Equipment.RpcUse
-                functionHash = GetMethodHash(invokeClass, rpcName),
+                functionHash = RemoteCallHelper.GetMethodHash(invokeClass, rpcName),
                 // segment to avoid reader allocations
                 payload = writer.ToArraySegment()
             };
@@ -311,7 +304,7 @@ namespace Mirror
         [EditorBrowsable(EditorBrowsableState.Never)]
         public virtual bool InvokeRPC(int rpcHash, NetworkReader reader)
         {
-            return InvokeHandlerDelegate(rpcHash, MirrorInvokeType.ClientRpc, reader);
+            return RemoteCallHelper.InvokeHandlerDelegate(rpcHash, MirrorInvokeType.ClientRpc, reader, this);
         }
         #endregion
 
@@ -331,7 +324,7 @@ namespace Mirror
                 netId = netId,
                 componentIndex = ComponentIndex,
                 // type+func so Inventory.RpcUse != Equipment.RpcUse
-                functionHash = GetMethodHash(invokeClass, eventName),
+                functionHash = RemoteCallHelper.GetMethodHash(invokeClass, eventName),
                 // segment to avoid reader allocations
                 payload = writer.ToArraySegment()
             };
@@ -348,129 +341,8 @@ namespace Mirror
         [EditorBrowsable(EditorBrowsableState.Never)]
         public virtual bool InvokeSyncEvent(int eventHash, NetworkReader reader)
         {
-            return InvokeHandlerDelegate(eventHash, MirrorInvokeType.SyncEvent, reader);
+            return RemoteCallHelper.InvokeHandlerDelegate(eventHash, MirrorInvokeType.SyncEvent, reader, this);
         }
-        #endregion
-
-        #region Code Gen Path Helpers
-        /// <summary>
-        /// Delegate for Command functions.
-        /// </summary>
-        /// <param name="obj"></param>
-        /// <param name="reader"></param>
-        public delegate void CmdDelegate(NetworkBehaviour obj, NetworkReader reader);
-
-        protected class Invoker
-        {
-            public MirrorInvokeType invokeType;
-            public Type invokeClass;
-            public CmdDelegate invokeFunction;
-        }
-
-        static readonly Dictionary<int, Invoker> cmdHandlerDelegates = new Dictionary<int, Invoker>();
-
-        // helper function register a Command/Rpc/SyncEvent delegate
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        protected static void RegisterDelegate(Type invokeClass, string cmdName, MirrorInvokeType invokerType, CmdDelegate func)
-        {
-            // type+func so Inventory.RpcUse != Equipment.RpcUse
-            int cmdHash = GetMethodHash(invokeClass, cmdName);
-
-            if (cmdHandlerDelegates.ContainsKey(cmdHash))
-            {
-                // something already registered this hash
-                Invoker oldInvoker = cmdHandlerDelegates[cmdHash];
-                if (oldInvoker.invokeClass == invokeClass &&
-                    oldInvoker.invokeType == invokerType &&
-                    oldInvoker.invokeFunction == func)
-                {
-                    // it's all right,  it was the same function
-                    return;
-                }
-
-                logger.LogError($"Function {oldInvoker.invokeClass}.{oldInvoker.invokeFunction.GetMethodName()} and {invokeClass}.{func.GetMethodName()} have the same hash.  Please rename one of them");
-            }
-            Invoker invoker = new Invoker
-            {
-                invokeType = invokerType,
-                invokeClass = invokeClass,
-                invokeFunction = func
-            };
-            cmdHandlerDelegates[cmdHash] = invoker;
-            if (logger.LogEnabled()) logger.Log("RegisterDelegate hash:" + cmdHash + " invokerType: " + invokerType + " method:" + func.GetMethodName());
-        }
-
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        public static void RegisterCommandDelegate(Type invokeClass, string cmdName, CmdDelegate func)
-        {
-            RegisterDelegate(invokeClass, cmdName, MirrorInvokeType.Command, func);
-        }
-
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        public static void RegisterRpcDelegate(Type invokeClass, string rpcName, CmdDelegate func)
-        {
-            RegisterDelegate(invokeClass, rpcName, MirrorInvokeType.ClientRpc, func);
-        }
-
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        public static void RegisterEventDelegate(Type invokeClass, string eventName, CmdDelegate func)
-        {
-            RegisterDelegate(invokeClass, eventName, MirrorInvokeType.SyncEvent, func);
-        }
-
-        // we need a way to clean up delegates after tests
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        internal static void ClearDelegates()
-        {
-            cmdHandlerDelegates.Clear();
-        }
-
-        static bool GetInvokerForHash(int cmdHash, MirrorInvokeType invokeType, out Invoker invoker)
-        {
-            if (cmdHandlerDelegates.TryGetValue(cmdHash, out invoker) &&
-                invoker != null &&
-                invoker.invokeType == invokeType)
-            {
-                return true;
-            }
-
-            // debug message if not found, or null, or mismatched type
-            // (no need to throw an error, an attacker might just be trying to
-            //  call an cmd with an rpc's hash)
-            if (logger.LogEnabled()) logger.Log("GetInvokerForHash hash:" + cmdHash + " not found");
-            return false;
-        }
-
-        // InvokeCmd/Rpc/SyncEventDelegate can all use the same function here
-        internal bool InvokeHandlerDelegate(int cmdHash, MirrorInvokeType invokeType, NetworkReader reader)
-        {
-            if (GetInvokerForHash(cmdHash, invokeType, out Invoker invoker) &&
-                invoker.invokeClass.IsInstanceOfType(this))
-            {
-                invoker.invokeFunction(this, reader);
-                return true;
-            }
-            return false;
-        }
-
-        [Obsolete("Use NetworkBehaviour.GetDelegate instead.")]
-        public static CmdDelegate GetRpcHandler(int cmdHash) => GetDelegate(cmdHash);
-
-        /// <summary>
-        /// Gets the handler function for a given hash
-        /// Can be used by profilers and debuggers
-        /// </summary>
-        /// <param name="cmdHash">rpc function hash</param>
-        /// <returns>The function delegate that will handle the command</returns>
-        public static CmdDelegate GetDelegate(int cmdHash)
-        {
-            if (cmdHandlerDelegates.TryGetValue(cmdHash, out Invoker invoker))
-            {
-                return invoker.invokeFunction;
-            }
-            return null;
-        }
-
         #endregion
 
         #region Helpers

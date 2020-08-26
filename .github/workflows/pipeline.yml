@@ -76,12 +76,12 @@ jobs:
         uses: actions/cache@master
         with:
           path: Library
-          key: Library-Server-1
+          key: Library-Server
 
       - name: Build game
         uses: webbertakken/unity-builder@master
         with:
-          unityVersion: 2019.3.14f1
+          unityVersion: 2019.4.8f1
           targetPlatform: StandaloneLinux64
           buildMethod: Racerr.Editor.CICDPipeline.BuildProject
           customParameters: -buildOptions EnableHeadlessMode
@@ -126,12 +126,12 @@ jobs:
         uses: actions/cache@master
         with:
           path: Library
-          key: Library-WebGL-1
+          key: Library-WebGL
 
       - name: Build game
         uses: webbertakken/unity-builder@master
         with:
-          unityVersion: 2019.3.14f1
+          unityVersion: 2019.4.8f1
           targetPlatform: WebGL
           buildMethod: Racerr.Editor.CICDPipeline.BuildProject
           versioning: None

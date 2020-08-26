@@ -20,7 +20,7 @@ namespace Mirror.Weaver
         // Get hook method if any
         public static MethodDefinition GetHookMethod(TypeDefinition td, FieldDefinition syncVar)
         {
-            CustomAttribute syncVarAttr = syncVar.GetCustomAttribute(Weaver.SyncVarType.FullName);
+            CustomAttribute syncVarAttr = syncVar.GetCustomAttribute(WeaverTypes.SyncVarType.FullName);
 
             if (syncVarAttr == null)
                 return null;
@@ -79,40 +79,40 @@ namespace Mirror.Weaver
                     MethodAttributes.HideBySig,
                     fd.FieldType);
 
-            ILProcessor getWorker = get.Body.GetILProcessor();
+            ILProcessor worker = get.Body.GetILProcessor();
 
             // [SyncVar] GameObject?
-            if (fd.FieldType.FullName == Weaver.gameObjectType.FullName)
+            if (fd.FieldType.FullName == WeaverTypes.gameObjectType.FullName)
             {
                 // return this.GetSyncVarGameObject(ref field, uint netId);
                 // this.
-                getWorker.Append(getWorker.Create(OpCodes.Ldarg_0));
-                getWorker.Append(getWorker.Create(OpCodes.Ldarg_0));
-                getWorker.Append(getWorker.Create(OpCodes.Ldfld, netFieldId));
-                getWorker.Append(getWorker.Create(OpCodes.Ldarg_0));
-                getWorker.Append(getWorker.Create(OpCodes.Ldflda, fd));
-                getWorker.Append(getWorker.Create(OpCodes.Call, Weaver.getSyncVarGameObjectReference));
-                getWorker.Append(getWorker.Create(OpCodes.Ret));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldfld, netFieldId));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldflda, fd));
+                worker.Append(worker.Create(OpCodes.Call, WeaverTypes.getSyncVarGameObjectReference));
+                worker.Append(worker.Create(OpCodes.Ret));
             }
             // [SyncVar] NetworkIdentity?
-            else if (fd.FieldType.FullName == Weaver.NetworkIdentityType.FullName)
+            else if (fd.FieldType.FullName == WeaverTypes.NetworkIdentityType.FullName)
             {
                 // return this.GetSyncVarNetworkIdentity(ref field, uint netId);
                 // this.
-                getWorker.Append(getWorker.Create(OpCodes.Ldarg_0));
-                getWorker.Append(getWorker.Create(OpCodes.Ldarg_0));
-                getWorker.Append(getWorker.Create(OpCodes.Ldfld, netFieldId));
-                getWorker.Append(getWorker.Create(OpCodes.Ldarg_0));
-                getWorker.Append(getWorker.Create(OpCodes.Ldflda, fd));
-                getWorker.Append(getWorker.Create(OpCodes.Call, Weaver.getSyncVarNetworkIdentityReference));
-                getWorker.Append(getWorker.Create(OpCodes.Ret));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldfld, netFieldId));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldflda, fd));
+                worker.Append(worker.Create(OpCodes.Call, WeaverTypes.getSyncVarNetworkIdentityReference));
+                worker.Append(worker.Create(OpCodes.Ret));
             }
             // [SyncVar] int, string, etc.
             else
             {
-                getWorker.Append(getWorker.Create(OpCodes.Ldarg_0));
-                getWorker.Append(getWorker.Create(OpCodes.Ldfld, fd));
-                getWorker.Append(getWorker.Create(OpCodes.Ret));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldfld, fd));
+                worker.Append(worker.Create(OpCodes.Ret));
             }
 
             get.Body.Variables.Add(new VariableDefinition(fd.FieldType));
@@ -128,93 +128,93 @@ namespace Mirror.Weaver
             MethodDefinition set = new MethodDefinition("set_Network" + originalName, MethodAttributes.Public |
                     MethodAttributes.SpecialName |
                     MethodAttributes.HideBySig,
-                    Weaver.voidType);
+                    WeaverTypes.voidType);
 
-            ILProcessor setWorker = set.Body.GetILProcessor();
+            ILProcessor worker = set.Body.GetILProcessor();
 
             // if (!SyncVarEqual(value, ref playerData))
-            Instruction endOfMethod = setWorker.Create(OpCodes.Nop);
+            Instruction endOfMethod = worker.Create(OpCodes.Nop);
 
             // this
-            setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
+            worker.Append(worker.Create(OpCodes.Ldarg_0));
             // new value to set
-            setWorker.Append(setWorker.Create(OpCodes.Ldarg_1));
+            worker.Append(worker.Create(OpCodes.Ldarg_1));
             // reference to field to set
             // make generic version of SetSyncVar with field type
-            if (fd.FieldType.FullName == Weaver.gameObjectType.FullName)
+            if (fd.FieldType.FullName == WeaverTypes.gameObjectType.FullName)
             {
                 // reference to netId Field to set
-                setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
-                setWorker.Append(setWorker.Create(OpCodes.Ldfld, netFieldId));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldfld, netFieldId));
 
-                setWorker.Append(setWorker.Create(OpCodes.Call, Weaver.syncVarGameObjectEqualReference));
+                worker.Append(worker.Create(OpCodes.Call, WeaverTypes.syncVarGameObjectEqualReference));
             }
-            else if (fd.FieldType.FullName == Weaver.NetworkIdentityType.FullName)
+            else if (fd.FieldType.FullName == WeaverTypes.NetworkIdentityType.FullName)
             {
                 // reference to netId Field to set
-                setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
-                setWorker.Append(setWorker.Create(OpCodes.Ldfld, netFieldId));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldfld, netFieldId));
 
-                setWorker.Append(setWorker.Create(OpCodes.Call, Weaver.syncVarNetworkIdentityEqualReference));
+                worker.Append(worker.Create(OpCodes.Call, WeaverTypes.syncVarNetworkIdentityEqualReference));
             }
             else
             {
-                setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
-                setWorker.Append(setWorker.Create(OpCodes.Ldflda, fd));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldflda, fd));
 
-                GenericInstanceMethod syncVarEqualGm = new GenericInstanceMethod(Weaver.syncVarEqualReference);
+                GenericInstanceMethod syncVarEqualGm = new GenericInstanceMethod(WeaverTypes.syncVarEqualReference);
                 syncVarEqualGm.GenericArguments.Add(fd.FieldType);
-                setWorker.Append(setWorker.Create(OpCodes.Call, syncVarEqualGm));
+                worker.Append(worker.Create(OpCodes.Call, syncVarEqualGm));
             }
 
-            setWorker.Append(setWorker.Create(OpCodes.Brtrue, endOfMethod));
+            worker.Append(worker.Create(OpCodes.Brtrue, endOfMethod));
 
             // T oldValue = value;
             // TODO for GO/NI we need to backup the netId don't we?
             VariableDefinition oldValue = new VariableDefinition(fd.FieldType);
             set.Body.Variables.Add(oldValue);
-            setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
-            setWorker.Append(setWorker.Create(OpCodes.Ldfld, fd));
-            setWorker.Append(setWorker.Create(OpCodes.Stloc, oldValue));
+            worker.Append(worker.Create(OpCodes.Ldarg_0));
+            worker.Append(worker.Create(OpCodes.Ldfld, fd));
+            worker.Append(worker.Create(OpCodes.Stloc, oldValue));
 
             // this
-            setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
+            worker.Append(worker.Create(OpCodes.Ldarg_0));
 
             // new value to set
-            setWorker.Append(setWorker.Create(OpCodes.Ldarg_1));
+            worker.Append(worker.Create(OpCodes.Ldarg_1));
 
             // reference to field to set
-            setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
-            setWorker.Append(setWorker.Create(OpCodes.Ldflda, fd));
+            worker.Append(worker.Create(OpCodes.Ldarg_0));
+            worker.Append(worker.Create(OpCodes.Ldflda, fd));
 
             // dirty bit
             // 8 byte integer aka long
-            setWorker.Append(setWorker.Create(OpCodes.Ldc_I8, dirtyBit));
+            worker.Append(worker.Create(OpCodes.Ldc_I8, dirtyBit));
 
-            if (fd.FieldType.FullName == Weaver.gameObjectType.FullName)
+            if (fd.FieldType.FullName == WeaverTypes.gameObjectType.FullName)
             {
                 // reference to netId Field to set
-                setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
-                setWorker.Append(setWorker.Create(OpCodes.Ldflda, netFieldId));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldflda, netFieldId));
 
-                setWorker.Append(setWorker.Create(OpCodes.Call, Weaver.setSyncVarGameObjectReference));
+                worker.Append(worker.Create(OpCodes.Call, WeaverTypes.setSyncVarGameObjectReference));
             }
-            else if (fd.FieldType.FullName == Weaver.NetworkIdentityType.FullName)
+            else if (fd.FieldType.FullName == WeaverTypes.NetworkIdentityType.FullName)
             {
                 // reference to netId Field to set
-                setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
-                setWorker.Append(setWorker.Create(OpCodes.Ldflda, netFieldId));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldflda, netFieldId));
 
-                setWorker.Append(setWorker.Create(OpCodes.Call, Weaver.setSyncVarNetworkIdentityReference));
+                worker.Append(worker.Create(OpCodes.Call, WeaverTypes.setSyncVarNetworkIdentityReference));
             }
             else
             {
                 // make generic version of SetSyncVar with field type
-                GenericInstanceMethod gm = new GenericInstanceMethod(Weaver.setSyncVarReference);
+                GenericInstanceMethod gm = new GenericInstanceMethod(WeaverTypes.setSyncVarReference);
                 gm.GenericArguments.Add(fd.FieldType);
 
                 // invoke SetSyncVar
-                setWorker.Append(setWorker.Create(OpCodes.Call, gm));
+                worker.Append(worker.Create(OpCodes.Call, gm));
             }
 
             MethodDefinition hookMethod = GetHookMethod(td, fd);
@@ -222,36 +222,36 @@ namespace Mirror.Weaver
             if (hookMethod != null)
             {
                 //if (NetworkServer.localClientActive && !getSyncVarHookGuard(dirtyBit))
-                Instruction label = setWorker.Create(OpCodes.Nop);
-                setWorker.Append(setWorker.Create(OpCodes.Call, Weaver.NetworkServerGetLocalClientActive));
-                setWorker.Append(setWorker.Create(OpCodes.Brfalse, label));
-                setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
-                setWorker.Append(setWorker.Create(OpCodes.Ldc_I8, dirtyBit));
-                setWorker.Append(setWorker.Create(OpCodes.Call, Weaver.getSyncVarHookGuard));
-                setWorker.Append(setWorker.Create(OpCodes.Brtrue, label));
+                Instruction label = worker.Create(OpCodes.Nop);
+                worker.Append(worker.Create(OpCodes.Call, WeaverTypes.NetworkServerGetLocalClientActive));
+                worker.Append(worker.Create(OpCodes.Brfalse, label));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldc_I8, dirtyBit));
+                worker.Append(worker.Create(OpCodes.Call, WeaverTypes.getSyncVarHookGuard));
+                worker.Append(worker.Create(OpCodes.Brtrue, label));
 
                 // setSyncVarHookGuard(dirtyBit, true);
-                setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
-                setWorker.Append(setWorker.Create(OpCodes.Ldc_I8, dirtyBit));
-                setWorker.Append(setWorker.Create(OpCodes.Ldc_I4_1));
-                setWorker.Append(setWorker.Create(OpCodes.Call, Weaver.setSyncVarHookGuard));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldc_I8, dirtyBit));
+                worker.Append(worker.Create(OpCodes.Ldc_I4_1));
+                worker.Append(worker.Create(OpCodes.Call, WeaverTypes.setSyncVarHookGuard));
 
                 // call hook (oldValue, newValue)
                 // Generates: OnValueChanged(oldValue, value);
-                WriteCallHookMethodUsingArgument(setWorker, hookMethod, oldValue);
+                WriteCallHookMethodUsingArgument(worker, hookMethod, oldValue);
 
                 // setSyncVarHookGuard(dirtyBit, false);
-                setWorker.Append(setWorker.Create(OpCodes.Ldarg_0));
-                setWorker.Append(setWorker.Create(OpCodes.Ldc_I8, dirtyBit));
-                setWorker.Append(setWorker.Create(OpCodes.Ldc_I4_0));
-                setWorker.Append(setWorker.Create(OpCodes.Call, Weaver.setSyncVarHookGuard));
+                worker.Append(worker.Create(OpCodes.Ldarg_0));
+                worker.Append(worker.Create(OpCodes.Ldc_I8, dirtyBit));
+                worker.Append(worker.Create(OpCodes.Ldc_I4_0));
+                worker.Append(worker.Create(OpCodes.Call, WeaverTypes.setSyncVarHookGuard));
 
-                setWorker.Append(label);
+                worker.Append(label);
             }
 
-            setWorker.Append(endOfMethod);
+            worker.Append(endOfMethod);
 
-            setWorker.Append(setWorker.Create(OpCodes.Ret));
+            worker.Append(worker.Create(OpCodes.Ret));
 
             set.Parameters.Add(new ParameterDefinition("value", ParameterAttributes.In, fd.FieldType));
             set.SemanticsAttributes = MethodSemanticsAttributes.Setter;
@@ -262,16 +262,16 @@ namespace Mirror.Weaver
         public static void ProcessSyncVar(TypeDefinition td, FieldDefinition fd, Dictionary<FieldDefinition, FieldDefinition> syncVarNetIds, long dirtyBit)
         {
             string originalName = fd.Name;
-            Weaver.DLog(td, "Sync Var " + fd.Name + " " + fd.FieldType + " " + Weaver.gameObjectType);
+            Weaver.DLog(td, "Sync Var " + fd.Name + " " + fd.FieldType + " " + WeaverTypes.gameObjectType);
 
             // GameObject/NetworkIdentity SyncVars have a new field for netId
             FieldDefinition netIdField = null;
-            if (fd.FieldType.FullName == Weaver.gameObjectType.FullName ||
-                fd.FieldType.FullName == Weaver.NetworkIdentityType.FullName)
+            if (fd.FieldType.FullName == WeaverTypes.gameObjectType.FullName ||
+                fd.FieldType.FullName == WeaverTypes.NetworkIdentityType.FullName)
             {
                 netIdField = new FieldDefinition("___" + fd.Name + "NetId",
                     FieldAttributes.Private,
-                    Weaver.uint32Type);
+                    WeaverTypes.uint32Type);
 
                 syncVarNetIds[fd] = netIdField;
             }
@@ -297,38 +297,37 @@ namespace Mirror.Weaver
             // netId instead
             // -> only for GameObjects, otherwise an int syncvar's getter would
             //    end up in recursion.
-            if (fd.FieldType.FullName == Weaver.gameObjectType.FullName ||
-                fd.FieldType.FullName == Weaver.NetworkIdentityType.FullName)
+            if (fd.FieldType.FullName == WeaverTypes.gameObjectType.FullName ||
+                fd.FieldType.FullName == WeaverTypes.NetworkIdentityType.FullName)
             {
                 Weaver.WeaveLists.replacementGetterProperties[fd] = get;
             }
         }
 
-        public static void ProcessSyncVars(TypeDefinition td, List<FieldDefinition> syncVars, List<FieldDefinition> syncObjects, Dictionary<FieldDefinition, FieldDefinition> syncVarNetIds)
+        public static (List<FieldDefinition> syncVars, Dictionary<FieldDefinition, FieldDefinition> syncVarNetIds) ProcessSyncVars(TypeDefinition td)
         {
-            int numSyncVars = 0;
+            List<FieldDefinition> syncVars = new List<FieldDefinition>();
+            Dictionary<FieldDefinition, FieldDefinition> syncVarNetIds = new Dictionary<FieldDefinition, FieldDefinition>();
 
             // the mapping of dirtybits to sync-vars is implicit in the order of the fields here. this order is recorded in m_replacementProperties.
             // start assigning syncvars at the place the base class stopped, if any
             int dirtyBitCounter = Weaver.GetSyncVarStart(td.BaseType.FullName);
 
-            syncVarNetIds.Clear();
-
             // find syncvars
             foreach (FieldDefinition fd in td.Fields)
             {
-                if (fd.HasCustomAttribute(Weaver.SyncVarType))
+                if (fd.HasCustomAttribute(WeaverTypes.SyncVarType))
                 {
                     if ((fd.Attributes & FieldAttributes.Static) != 0)
                     {
                         Weaver.Error($"{fd.Name} cannot be static", fd);
-                        return;
+                        continue;
                     }
 
                     if (fd.FieldType.IsArray)
                     {
                         Weaver.Error($"{fd.Name} has invalid type. Use SyncLists instead of arrays", fd);
-                        return;
+                        continue;
                     }
 
                     if (SyncObjectInitializer.ImplementsSyncObject(fd.FieldType))
@@ -341,31 +340,13 @@ namespace Mirror.Weaver
 
                         ProcessSyncVar(td, fd, syncVarNetIds, 1L << dirtyBitCounter);
                         dirtyBitCounter += 1;
-                        numSyncVars += 1;
 
                         if (dirtyBitCounter == SyncVarLimit)
                         {
                             Weaver.Error($"{td.Name} has too many SyncVars. Consider refactoring your class into multiple components", td);
-                            return;
+                            continue;
                         }
                     }
-                }
-
-                if (fd.FieldType.Resolve().ImplementsInterface(Weaver.SyncObjectType))
-                {
-                    if (fd.IsStatic)
-                    {
-                        Weaver.Error($"{fd.Name} cannot be static", fd);
-                        return;
-                    }
-
-                    if (fd.FieldType.Resolve().HasGenericParameters)
-                    {
-                        Weaver.Error($"Cannot use generic SyncObject {fd.Name} directly in NetworkBehaviour. Create a class and inherit from the generic SyncObject instead", fd);
-                        return;
-                    }
-
-                    syncObjects.Add(fd);
                 }
             }
 
@@ -374,8 +355,9 @@ namespace Mirror.Weaver
             {
                 td.Fields.Add(fd);
             }
+            Weaver.SetNumSyncVars(td.FullName, syncVars.Count);
 
-            Weaver.SetNumSyncVars(td.FullName, numSyncVars);
+            return (syncVars, syncVarNetIds);
         }
 
         public static void WriteCallHookMethodUsingArgument(ILProcessor worker, MethodDefinition hookMethod, VariableDefinition oldValue)

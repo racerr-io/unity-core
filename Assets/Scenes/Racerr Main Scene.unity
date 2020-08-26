@@ -163,7 +163,7 @@ MonoBehaviour:
     type: 3}
   finalTrackPiecePrefab: {fileID: 2507272380122558485, guid: db093cd94306b1c4da66db30033467db,
     type: 3}
-  trackLength: 25
+  trackLength: 20
 --- !u!114 &160586557
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7255,7 +7255,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   syncMode: 0
   syncInterval: 0
-  maxRaceDuration: 90
+  maxRaceDuration: 120
   remainingRaceDurationOnPlayerFinish: 15
 --- !u!114 &1584656526
 MonoBehaviour:
@@ -7305,7 +7305,7 @@ MonoBehaviour:
     type: 3}
   policeCarPrefab: {fileID: 6285641333015487221, guid: 7bbc374695ed3ee41a00015a24338234,
     type: 3}
-  firstCarBaseLineDisplacement: {x: 4.5, y: 0.36, z: -15}
+  firstCarBaseLineDisplacement: {x: 4.5, y: 0.5, z: -15}
   verticalDistanceBetweenCars: {x: 0, y: 0, z: 5}
   horizontalDistanceBetweenCars: {x: 9, y: 0, z: 0}
 --- !u!114 &1597690728 stripped
@@ -7665,10 +7665,10 @@ MonoBehaviour:
   - {fileID: 2166906741778702378, guid: 5849f63ff4d06f34f97c21eefd3ea46c, type: 3}
   - {fileID: 1018952010411425780, guid: aa65098f076c6e141991513d2b3608c8, type: 3}
   - {fileID: 8860773397577860574, guid: 9f9445acfc573b24ea79c43374fc0738, type: 3}
-  - {fileID: 4033895018079671111, guid: e74ef5563a9a60547b839cb8ea23055b, type: 3}
+  - {fileID: 2244814973918567047, guid: 51c8e7ebe133f8a429b994a0f9b91b25, type: 3}
+  - {fileID: 602180642073291049, guid: 900a5e9551090104892f49524dc8a41f, type: 3}
+  - {fileID: 2775740973534431510, guid: 90c1ebcba9db0b447be32452c7709d20, type: 3}
   - {fileID: 3637028748793434385, guid: 8f34401311c1f8a4689fb12aa59d705b, type: 3}
-  - {fileID: 6098622089286647885, guid: f97af7b666611434582977f2250e2b6b, type: 3}
-  - {fileID: 4812132155584618507, guid: 106072e8ebf69294c89488b8bfe7961e, type: 3}
   - {fileID: 2015120010295735337, guid: 0074f714a60390f46be119849f605cd8, type: 3}
   - {fileID: 2507272380122558485, guid: db093cd94306b1c4da66db30033467db, type: 3}
   - {fileID: 6285641333015487221, guid: 7bbc374695ed3ee41a00015a24338234, type: 3}

@@ -45,10 +45,15 @@ namespace Mirror
 
         /// <summary>
         /// Automatically invoke StartServer()
-        /// <para>If the application is a Server Build or run with the -batchMode command line arguement, StartServer is automatically invoked.</para>
+        /// <para>If the application is a Server Build, StartServer is automatically invoked.</para>
+        /// <para>Server build is true when "Server build" is checked in build menu, or BuildOptions.EnableHeadlessMode flag is in BuildOptions</para>	
         /// </summary>
-        [Tooltip("Should the server auto-start when the game is started in a headless build?")]
-        public bool startOnHeadless = true;
+        [Tooltip("Should the server auto-start when 'Server Build' is checked in build settings")]
+        [FormerlySerializedAs("startOnHeadless")]
+        public bool autoStartServerBuild = true;
+
+        [Obsolete("Use autoStartServerBuild instead.")]
+        public bool startOnHeadless { get => autoStartServerBuild; set => autoStartServerBuild = value; }
 
         /// <summary>
         /// Enables verbose debug messages in the console
@@ -150,7 +155,7 @@ namespace Mirror
 
         /// <summary>
         /// List of prefabs that will be registered with the spawning system.
-        /// <para>For each of these prefabs, ClientManager.RegisterPrefab() will be automatically invoke.</para>
+        /// <para>For each of these prefabs, ClientScene.RegisterPrefab() will be automatically invoked.</para>
         /// </summary>
         [FormerlySerializedAs("m_SpawnPrefabs"), HideInInspector]
         public List<GameObject> spawnPrefabs = new List<GameObject>();
@@ -185,6 +190,7 @@ namespace Mirror
         /// <summary>
         /// headless mode detection
         /// </summary>
+        [Obsolete("Use #if UNITY_SERVER instead.")]
         public static bool isHeadless => SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null;
 
         // helper enum to know if we started the networkmanager as server/client/host.
@@ -255,10 +261,12 @@ namespace Mirror
             // some transports might not be ready until Start.
             //
             // (tick rate is applied in StartServer!)
-            if (isHeadless && startOnHeadless)
+#if UNITY_SERVER
+            if (autoStartServerBuild)
             {
                 StartServer();
             }
+#endif
         }
 
         // NetworkIdentity.UNetStaticUpdate is called from UnityEngine while LLAPI network is active.
@@ -675,15 +683,10 @@ namespace Mirror
         /// </summary>
         public virtual void ConfigureServerFrameRate()
         {
-            // set a fixed tick rate instead of updating as often as possible
-            // * if not in Editor (it doesn't work in the Editor)
-            // * if not in Host mode
-#if !UNITY_EDITOR
-            if (!NetworkClient.active && isHeadless)
-            {
-                Application.targetFrameRate = serverTickRate;
-                if (logger.logEnabled) logger.Log("Server Tick Rate set to: " + Application.targetFrameRate + " Hz.");
-            }
+            // only set framerate for server build
+#if UNITY_SERVER
+            Application.targetFrameRate = serverTickRate;
+            if (logger.logEnabled) logger.Log("Server Tick Rate set to: " + Application.targetFrameRate + " Hz.");
 #endif
         }
 
@@ -790,11 +793,11 @@ namespace Mirror
         /// The name of the current network scene.
         /// </summary>
         /// <remarks>
-        /// <para>This is populated if the NetworkManager is doing scene management. This should not be changed directly. Calls to ServerChangeScene() cause this to change. New clients that connect to a server will automatically load this scene.</para>
+        /// <para>This is populated if the NetworkManager is doing scene management. Calls to ServerChangeScene() cause this to change. New clients that connect to a server will automatically load this scene.</para>
         /// <para>This is used to make sure that all scene changes are initialized by Mirror.</para>
         /// <para>Loading a scene manually wont set networkSceneName, so Mirror would still load it again on start.</para>
         /// </remarks>
-        public static string networkSceneName = "";
+        public static string networkSceneName { get; protected set; } = "";
 
         public static UnityEngine.AsyncOperation loadingSceneAsync;
 
@@ -824,8 +827,13 @@ namespace Mirror
 
             loadingSceneAsync = SceneManager.LoadSceneAsync(newSceneName);
 
-            // notify all clients about the new scene
-            NetworkServer.SendToAll(new SceneMessage { sceneName = newSceneName });
+            // ServerChangeScene can be called when stopping the server
+            // when this happens the server is not active so does not need to tell clients about the change
+            if (NetworkServer.active)
+            {
+                // notify all clients about the new scene
+                NetworkServer.SendToAll(new SceneMessage { sceneName = newSceneName });
+            }
 
             startPositionIndex = 0;
             startPositions.Clear();
@@ -1020,6 +1028,18 @@ namespace Mirror
             }
         }
 
+        // finish load scene part for server-only. . makes code easier and is
+        // necessary for FinishStartServer later.
+        void FinishLoadSceneServerOnly()
+        {
+            // debug message is very important. if we ever break anything then
+            // it's very obvious to notice.
+            logger.Log("Finished loading scene in server-only mode.");
+
+            NetworkServer.SpawnObjects();
+            OnServerSceneChanged(networkSceneName);
+        }
+
         // finish load scene part for client-only. makes code easier and is
         // necessary for FinishStartClient later.
         void FinishLoadSceneClientOnly()
@@ -1039,18 +1059,6 @@ namespace Mirror
             {
                 OnClientSceneChanged(NetworkClient.connection);
             }
-        }
-
-        // finish load scene part for server-only. . makes code easier and is
-        // necessary for FinishStartServer later.
-        void FinishLoadSceneServerOnly()
-        {
-            // debug message is very important. if we ever break anything then
-            // it's very obvious to notice.
-            logger.Log("Finished loading scene in server-only mode.");
-
-            NetworkServer.SpawnObjects();
-            OnServerSceneChanged(networkSceneName);
         }
 
         #endregion
@@ -1092,6 +1100,31 @@ namespace Mirror
             startPositions.Remove(start);
         }
 
+        /// <summary>
+        /// This finds a spawn position based on NetworkStartPosition objects in the scene.
+        /// <para>This is used by the default implementation of OnServerAddPlayer.</para>
+        /// </summary>
+        /// <returns>Returns the transform to spawn a player at, or null.</returns>
+        public Transform GetStartPosition()
+        {
+            // first remove any dead transforms
+            startPositions.RemoveAll(t => t == null);
+
+            if (startPositions.Count == 0)
+                return null;
+
+            if (playerSpawnMethod == PlayerSpawnMethod.Random)
+            {
+                return startPositions[UnityEngine.Random.Range(0, startPositions.Count)];
+            }
+            else
+            {
+                Transform startPosition = startPositions[startPositionIndex];
+                startPositionIndex = (startPositionIndex + 1) % startPositions.Count;
+                return startPosition;
+            }
+        }
+
         #endregion
 
         #region Server Internal Message Handlers
@@ -1103,7 +1136,7 @@ namespace Mirror
             if (authenticator != null)
             {
                 // we have an authenticator - let it handle authentication
-                authenticator.OnServerAuthenticateInternal(conn);
+                authenticator.OnServerAuthenticate(conn);
             }
             else
             {
@@ -1191,7 +1224,7 @@ namespace Mirror
             if (authenticator != null)
             {
                 // we have an authenticator - let it handle authentication
-                authenticator.OnClientAuthenticateInternal(conn);
+                authenticator.OnClientAuthenticate(conn);
             }
             else
             {
@@ -1304,31 +1337,6 @@ namespace Mirror
                 : Instantiate(playerPrefab);
 
             NetworkServer.AddPlayerForConnection(conn, player);
-        }
-
-        /// <summary>
-        /// This finds a spawn position based on NetworkStartPosition objects in the scene.
-        /// <para>This is used by the default implementation of OnServerAddPlayer.</para>
-        /// </summary>
-        /// <returns>Returns the transform to spawn a player at, or null.</returns>
-        public Transform GetStartPosition()
-        {
-            // first remove any dead transforms
-            startPositions.RemoveAll(t => t == null);
-
-            if (startPositions.Count == 0)
-                return null;
-
-            if (playerSpawnMethod == PlayerSpawnMethod.Random)
-            {
-                return startPositions[UnityEngine.Random.Range(0, startPositions.Count)];
-            }
-            else
-            {
-                Transform startPosition = startPositions[startPositionIndex];
-                startPositionIndex = (startPositionIndex + 1) % startPositions.Count;
-                return startPosition;
-            }
         }
 
         // Deprecated 5/2/2020

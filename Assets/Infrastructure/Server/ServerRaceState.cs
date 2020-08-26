@@ -1,6 +1,7 @@
 ﻿using Mirror;
 using Racerr.Gameplay.Car;
 using Racerr.Utility;
+using Racerr.World.Track;
 using System;
 using System.Linq;
 using UnityEngine;
@@ -16,7 +17,9 @@ namespace Racerr.Infrastructure.Server
     /// </summary>
     public class ServerRaceState : RaceSessionState
     {
-        [SerializeField] int maxRaceDuration = 90;
+        const int secondsPerTrack = 6;
+
+        public int MaxRaceDuration => TrackGenerator.Singleton.TrackLength * secondsPerTrack;
         [SerializeField] int remainingRaceDurationOnPlayerFinish = 30;
 
         [SyncVar] double raceFinishTime;
@@ -29,7 +32,7 @@ namespace Racerr.Infrastructure.Server
         public override void Enter(object optionalData = null)
         {
             raceSessionData = new RaceSessionData(NetworkTime.time);
-            raceFinishTime = NetworkTime.time + maxRaceDuration;
+            raceFinishTime = NetworkTime.time + MaxRaceDuration;
             EnableAllPlayerCarControllers();
         }
 

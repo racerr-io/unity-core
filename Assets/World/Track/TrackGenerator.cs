@@ -23,6 +23,7 @@ namespace Racerr.World.Track
         [SerializeField] GameObject finalTrackPiecePrefab;
         [Min(2)] [SerializeField] int trackLength = 50;
 
+        public int TrackLength => trackLength;
         public event EventHandler TrackGenerated;
 
         // Synchronise all Generated Track Pieces to all clients
